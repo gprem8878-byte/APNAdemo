@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GEHU Chatbot</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: url("{{ url_for('static', filename='image.png') }}") no-repeat center center fixed;
+      background-size: cover;
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      background: rgba(0, 0, 0, 0.45);
+      padding: 15px;
+      backdrop-filter: blur(10px);
+      color: white;
+      text-align: center;
+      font-size: 22px;
+      font-weight: bold;
+      border-bottom: 1px solid rgba(255,255,255,0.3);
+    }
+
+    /* Chat Area */
+    #chatbox {
+      flex-grow: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Message Bubbles */
+    .message {
+      margin-bottom: 15px;
+      max-width: 75%;
+      padding: 12px 18px;
+      border-radius: 18px;
+      animation: fadeIn 0.3s ease-in-out;
+      font-size: 16px;
+      line-height: 1.4;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .user {
+      align-self: flex-end;
+      background: #007bff;
+      color: white;
+      border-radius: 18px 18px 4px 18px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .bot {
+      background: rgba(0, 0, 0, 0.55);   /* darker bubble */
+      color: #ffffff;                    /* bright white text */
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 18px 18px 18px 4px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+}
+
+    /* Input Section */
+    #input-container {
+      display: flex;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(255,255,255,0.3);
+    }
+
+    #msg {
+      flex-grow: 1;
+      padding: 12px;
+      font-size: 16px;
+      border-radius: 10px;
+      outline: none;
+      border: none;
+      background: rgba(255,255,255,0.9);
+    }
+
+    button {
+      margin-left: 12px;
+      padding: 12px 20px;
+      background: #0d6efd;
+      border: none;
+      border-radius: 10px;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      transition: 0.25s;
+    }
+
+    button:hover {
+      background: #0b5ed7;
+      transform: translateY(-2px);
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    Welcome {{ student_id }} ({{ dept }})
+    <a href="{{ url_for('logout') }}" style="color:white; float:right; margin-right:20px; font-size:14px;">Logout</a>
+  </header>
+
+  <div id="chatbox"></div>
+
+  <div id="input-container">
+    <input id="msg" type="text" placeholder="Ask your question here...">
+    <button id="send">Send</button>
+  </div>
+
+  <script>
+    const chatbox = document.getElementById('chatbox');
+    const input = document.getElementById('msg');
+    const send = document.getElementById('send');
+
+    function appendMessage(sender, text, cls) {
+      const div = document.createElement('div');
+      div.classList.add('message', cls);
+      div.innerHTML = `<strong>${sender}:</strong> ${text}`;
+      chatbox.appendChild(div);
+      chatbox.scrollTop = chatbox.scrollHeight;
+    }
+
+    function sendMessage() {
+      const msg = input.value.trim();
+      if (!msg) return;
+      appendMessage('You', msg, 'user');
+      input.value = '';
+
+      fetch('/get?msg=' + encodeURIComponent(msg))
+        .then(response => response.json())
+        .then(data => appendMessage('Bot', data.response, 'bot'))
+        .catch(() => appendMessage('Bot', 'Error contacting server.', 'bot'));
+    }
+
+    send.addEventListener('click', sendMessage);
+    input.addEventListener('keypress', e => {
+      if (e.key === 'Enter') sendMessage();
+    });
+  </script>
+
+</body>
+</html>

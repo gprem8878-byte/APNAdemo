@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard | GEHU Helper</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f9;
+            padding: 20px;
+        }
+
+        h2 {
+            color: #2d3e50;
+            text-align: center;
+        }
+
+        h3 {
+            margin-top: 40px;
+            color: #2d3e50;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        }
+
+        th, td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background: #007BFF;
+            color: white;
+        }
+
+        tr:hover {
+            background: #f1f1f1;
+        }
+
+        form {
+            background: white;
+            padding: 20px;
+            margin-top: 20px;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        }
+
+        input, select, textarea, button {
+            width: 95%;
+            padding: 10px;
+            margin-top: 12px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+        }
+
+        textarea {
+            height: 100px;
+        }
+
+        button {
+            background: #007BFF;
+            border: none;
+            color: white;
+            font-size: 17px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .logout-btn {
+            float: right;
+            padding: 10px 15px;
+            background: #dc3545;
+            color: white;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .logout-btn:hover {
+            background: #b52a37;
+        }
+    </style>
+</head>
+
+<body>
+
+    <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
+
+    <h2>Admin Dashboard</h2>
+
+    <!-- Unknown Queries Table -->
+    <h3>Unanswered Student Queries</h3>
+
+    <table>
+        <tr>
+            <th>Student ID</th>
+            <th>Department</th>
+            <th>Query</th>
+            <th>Time</th>
+        </tr>
+
+        {% for q in unknowns %}
+        <tr>
+            <td>{{ q.student_id }}</td>
+            <td>{{ q.department }}</td>
+            <td>{{ q.question }}</td>
+            <td>{{ q.created_at }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+
+    <!-- Add New FAQ -->
+    <h3>Add New FAQ (Teach Bot New Answers)</h3>
+
+    <form method="POST" action="{{ url_for('admin_add_faq') }}">
+
+        <label>Department:</label>
+        <select name="department" required>
+            <option value="ALL">ALL</option>
+            <option value="CSE">CSE</option>
+            <option value="ECE">ECE</option>
+            <option value="BCA">BCA</option>
+        </select>
+
+        <label>Keywords (comma separated):</label>
+        <input type="text" name="keywords" placeholder="e.g. syllabus, subjects, course" required>
+
+        <label>Answer:</label>
+        <textarea name="answer" placeholder="Bot response here..." required></textarea>
+
+        <button type="submit">Add FAQ</button>
+    </form>
+
+</body>
+</html>
