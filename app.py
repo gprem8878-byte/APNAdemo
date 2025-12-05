@@ -1,48 +1,72 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
-import sqlite3
-import webbrowser
-import threading
+import json
 import os
+from datetime import datetime
 from werkzeug.security import check_password_hash
 
-DB_PATH = "students.db"
+# ----------- RENDER-FRIENDLY DATA DIRECTORY -----------
+DATA_DIR = "/opt/render/project/src/data"
+
+STUDENTS_FILE = os.path.join(DATA_DIR, "students.json")
+FAQ_FILE = os.path.join(DATA_DIR, "faq.json")
+ADMIN_FILE = os.path.join(DATA_DIR, "admin.json")
+UNKNOWN_FILE = os.path.join(DATA_DIR, "unknown_queries.json")
+
+# auto create data folder
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# auto create missing json files
+for file in [STUDENTS_FILE, FAQ_FILE, ADMIN_FILE, UNKNOWN_FILE]:
+    if not os.path.exists(file):
+        with open(file, "w") as f:
+            f.write("[]")  # default empty list
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 
-# ------------------ DB helper ------------------
+# ------------ JSON LOAD/SAVE HELPERS ------------
 
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def load_json(path, default):
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return default
 
+
+def save_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+
+# ------------ STUDENT & FAQ HELPERS ------------
 
 def get_student(student_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM students WHERE id = ?", (student_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return row
+    students = load_json(STUDENTS_FILE, [])
+    for stu in students:
+        if stu["id"] == student_id:
+            return stu
+    return None
+
+
+def get_admin():
+    admins = load_json(ADMIN_FILE, {})
+    return admins
 
 
 def find_faq_answer(dept, user_text):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    faqs = load_json(FAQ_FILE, [])
+    user_text = user_text.lower()
 
-    cursor.execute("SELECT question_keywords, answer FROM faq WHERE department = ?", (dept,))
-    dept_rows = cursor.fetchall()
+    dept_faqs = [f for f in faqs if f["department"] == dept]
+    global_faqs = [f for f in faqs if f["department"] == "ALL"]
 
-    cursor.execute("SELECT question_keywords, answer FROM faq WHERE department = 'ALL'")
-    global_rows = cursor.fetchall()
-
-    all_rows = list(dept_rows) + list(global_rows)
-
+    all_rows = dept_faqs + global_faqs
     best_score = 0
     best_answer = None
-    user_text = user_text.lower()
 
     for row in all_rows:
         keywords = row["question_keywords"].lower().split(",")
@@ -51,50 +75,48 @@ def find_faq_answer(dept, user_text):
             best_score = score
             best_answer = row["answer"]
 
-    conn.close()
     return best_answer
 
 
-def save_unknown_query(student_id, department, question):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO unknown_queries (student_id, department, question) VALUES (?, ?, ?)",
-        (student_id, department, question)
-    )
-    conn.commit()
-    conn.close()
+def save_unknown_query(student_id, dept, question):
+    unknowns = load_json(UNKNOWN_FILE, [])
+    unknowns.append({
+        "student_id": student_id,
+        "department": dept,
+        "question": question,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    save_json(UNKNOWN_FILE, unknowns)
 
 
-# ------------------ ROUTES ------------------
+# ------------ ROUTES ------------
 
-@app.route('/')
+@app.route("/")
 def index():
-    return redirect(url_for('login'))
+    return redirect(url_for("login"))
 
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
-
-    if request.method == 'POST':
-        student_id = request.form['student_id']
-        password = request.form['password']
+    if request.method == "POST":
+        student_id = request.form["student_id"]
+        password = request.form["password"]
 
         student = get_student(student_id)
         if student and check_password_hash(student["password"], password):
-            session['student_id'] = student["id"]
-            session['student_name'] = student["name"]
-            session['department'] = student["department"]
-            session['section'] = student["section"]
+            session["student_id"] = student["id"]
+            session["student_name"] = student["name"]
+            session["department"] = student["department"]
+            session["section"] = student["section"]
             return redirect(url_for("chat"))
-        else:
-            error = "Invalid Student ID or Password"
+
+        error = "Invalid Student ID or Password"
 
     return render_template("login.html", error=error)
 
 
-@app.route('/chat')
+@app.route("/chat")
 def chat():
     if "student_id" not in session:
         return redirect(url_for("login"))
@@ -106,114 +128,100 @@ def chat():
     )
 
 
-@app.route('/get')
+@app.route("/get")
 def chatbot_response():
     if "student_id" not in session:
-        return jsonify({"response": "Session expired, please login again."})
+        return jsonify({"response": "Session expired, login again."})
 
     text = request.args.get("msg", "").strip()
-    if not text:
-        return jsonify({"response": "Please type something."})
-
     text_lower = text.lower()
+
     dept = session["department"]
     section = session["section"]
-    stu_name = session["student_name"]
+    name = session["student_name"]
 
-    # -------------------- GREETINGS --------------------
+    # Greetings
     if text_lower in ["hi", "hello", "hey"]:
-        return jsonify({"response": f"Hello {stu_name}! 😊 How can I assist you today?"})
+        return jsonify({"response": f"Hello {name}! 😊 How can I help you today?"})
 
     if "how are you" in text_lower:
-        return jsonify({"response": "I'm doing great! What can I help you with today?"})
+        return jsonify({"response": "I'm doing great! How can I assist you today?"})
 
-    # -------------------- BLOCK OTHER SECTIONS' TIMETABLES --------------------
-    sections = ["A1","A2","A3","A4","A5","E1","E2","E3","E4","E5","B1","B2","B3","B4","B5"]
+    # Block other section timetables
+    all_sections = ["A1","A2","A3","A4","A5",
+                    "E1","E2","E3","E4","E5",
+                    "B1","B2","B3","B4","B5"]
 
-    for sec in sections:
+    for sec in all_sections:
         if sec.lower() in text_lower:
             if sec != section:
-                return jsonify({
-                    "response": f"Sorry {stu_name}, you are not allowed to view timetable of {sec}. "
-                                f"I can only show your section ({section}) timetable."
+                return jsonify({"response":
+                    f"Sorry {name}, you cannot view timetable of {sec}. "
+                    f"I can only show YOUR section ({section})."
                 })
 
-    # -------------------- ACADEMIC CALENDAR --------------------
-    holiday_keywords = [
-        "holiday", "holidays", "vacation", "next semester",
-        "semester start", "academic calendar", "calendar",
-        "when will semester start", "when does semester start"
+    # Holiday / Academic Calendar
+    holiday_keys = [
+        "holiday","holidays","vacation","next semester",
+        "semester start","academic calendar","calendar"
     ]
 
-    for key in holiday_keywords:
-        if key in text_lower:
-            img_path = "/static/academic/holiday.png"
-            return jsonify({
-                "response": f"Here is the Academic Calendar (Holidays & Semester Schedule):<br>"
-                            f"<img src='{img_path}' style='max-width:90%; border-radius:10px;'>"
-            })
-
-    # -------------------- ASK SUBJECT IF ONLY SYLLABUS REQUEST --------------------
-    if "syllabus" in text_lower and not any(sub in text_lower for sub in ["dbms", "ai", "ds"]):
+    if any(key in text_lower for key in holiday_keys):
         return jsonify({
-            "response": "Please mention the subject 😊<br>Available subjects: <b>DBMS, AI, DS</b>"
+            "response": "Here is the Academic Calendar:<br>"
+                        "<img src='/static/academic/holiday.png' style='max-width:90%;border-radius:10px;'>"
         })
 
-    # -------------------- SUBJECT-WISE SYLLABUS --------------------
-    subjects = ["dbms", "ai", "ds"]
-    for sub in subjects:
+    # Subject-specific syllabus
+    if "syllabus" in text_lower and not any(sub in text_lower for sub in ["dbms","ai","ds"]):
+        return jsonify({"response":
+            "Please mention the subject 😊<br>Available: <b>DBMS, AI, DS</b>"
+        })
+
+    for sub in ["dbms", "ai", "ds"]:
         if sub in text_lower:
-            img_path = f"/static/syllabus/{dept}/{sub.upper()}.png"
             return jsonify({
-                "response": f"Syllabus for {sub.upper()} ({dept}):<br>"
-                            f"<img src='{img_path}' style='max-width:90%; border-radius:10px;'>"
+                "response": (
+                    f"Syllabus for {sub.upper()} ({dept}):<br>"
+                    f"<img src='/static/syllabus/{dept}/{sub.upper()}.png' style='max-width:90%;border-radius:10px;'>"
+                )
             })
 
-    # -------------------- SECTION-WISE TIMETABLE --------------------
+    # Timetable
     if "timetable" in text_lower or "time table" in text_lower:
-        img_path = f"/static/timetable/{dept}/{section}.png"
         return jsonify({
-            "response": f"Timetable for {dept} - Section {section}:<br>"
-                        f"<img src='{img_path}' style='max-width:90%; border-radius:10px;'>"
+            "response": (
+                f"Timetable for {dept} - {section}:<br>"
+                f"<img src='/static/timetable/{dept}/{section}.png' style='max-width:90%;border-radius:10px;'>"
+            )
         })
 
-    # -------------------- FAQ TEXT ANSWERS --------------------
-    answer = find_faq_answer(dept, text_lower)
-    if answer:
-        return jsonify({"response": answer})
+    # FAQ text answers
+    ans = find_faq_answer(dept, text_lower)
+    if ans:
+        return jsonify({"response": ans})
 
-    # -------------------- SAVE UNKNOWN QUESTION --------------------
+    # Unknown question
     save_unknown_query(session["student_id"], dept, text)
     return jsonify({"response": "I am not sure about that 🤔<br>Your question has been forwarded to the admin."})
 
 
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
+# ------------ ADMIN PANEL ------------
 
-
-# ------------------ ADMIN PANEL ------------------
-
-@app.route("/admin", methods=['GET', 'POST'])
+@app.route("/admin", methods=["GET","POST"])
 def admin_login():
     error = None
-
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM admin WHERE username = ?", (username,))
-        admin = cursor.fetchone()
-        conn.close()
-
-        if admin and check_password_hash(admin["password"], password):
+        admin = get_admin()
+        if (admin.get("username") == username and
+            check_password_hash(admin.get("password"), password)):
             session["admin"] = username
             return redirect(url_for("admin_dashboard"))
-        else:
-            error = "Invalid admin credentials"
+
+        error = "Invalid admin credentials"
 
     return render_template("admin_login.html", error=error)
 
@@ -221,47 +229,33 @@ def admin_login():
 @app.route("/admin/dashboard")
 def admin_dashboard():
     if "admin" not in session:
-        return redirect(url_for("admin_login"))
+        return redirect(url_for("admin"))
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM unknown_queries ORDER BY created_at DESC")
-    unknowns = cursor.fetchall()
-    conn.close()
-
-    return render_template("admin_dashboard.html", unknowns=unknowns)
+    unknown = load_json(UNKNOWN_FILE, [])
+    return render_template("admin_dashboard.html", unknowns=unknown)
 
 
-@app.route("/admin/add_faq", methods=['POST'])
+@app.route("/admin/add_faq", methods=["POST"])
 def admin_add_faq():
     if "admin" not in session:
-        return redirect(url_for("admin_login"))
+        return redirect(url_for("admin"))
 
     dept = request.form["department"]
     keywords = request.form["keywords"]
     answer = request.form["answer"]
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO faq (department, question_keywords, answer) VALUES (?, ?, ?)",
-        (dept, keywords, answer)
-    )
-    conn.commit()
-    conn.close()
+    faqs = load_json(FAQ_FILE, [])
+    faqs.append({
+        "department": dept,
+        "question_keywords": keywords,
+        "answer": answer
+    })
+    save_json(FAQ_FILE, faqs)
 
     return redirect(url_for("admin_dashboard"))
 
 
-# ------------------ MAIN (RENDER-COMPATIBLE) ------------------
+# ------------ MAIN ------------
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-
-    # Only open browser locally, not on Render
-    if "RENDER" not in os.environ:
-        def open_browser():
-            webbrowser.open_new(f"http://127.0.0.1:{port}/")
-        threading.Timer(1, open_browser).start()
-
-    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
+    app.run()
