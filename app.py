@@ -132,13 +132,13 @@ def chatbot_response():
 
     for sec in sections:
         if sec.lower() in text_lower:
-            if sec != section:  
+            if sec != section:
                 return jsonify({
                     "response": f"Sorry {stu_name}, you are not allowed to view timetable of {sec}. "
                                 f"I can only show your section ({section}) timetable."
                 })
 
-    # -------------------- ACADEMIC CALENDAR / HOLIDAYS --------------------
+    # -------------------- ACADEMIC CALENDAR --------------------
     holiday_keywords = [
         "holiday", "holidays", "vacation", "next semester",
         "semester start", "academic calendar", "calendar",
@@ -153,17 +153,16 @@ def chatbot_response():
                             f"<img src='{img_path}' style='max-width:90%; border-radius:10px;'>"
             })
 
-    # -------------------- ASK SUBJECT IF ONLY SYLLABUS IS MENTIONED --------------------
+    # -------------------- ASK SUBJECT IF ONLY SYLLABUS REQUEST --------------------
     if "syllabus" in text_lower and not any(sub in text_lower for sub in ["dbms", "ai", "ds"]):
         return jsonify({
             "response": "Please mention the subject 😊<br>Available subjects: <b>DBMS, AI, DS</b>"
         })
 
-    # -------------------- SUBJECT-WISE SYLLABUS (AI / DBMS / DS) --------------------
+    # -------------------- SUBJECT-WISE SYLLABUS --------------------
     subjects = ["dbms", "ai", "ds"]
-
     for sub in subjects:
-        if sub in text_lower:   # Now works even if user writes only "AI"
+        if sub in text_lower:
             img_path = f"/static/syllabus/{dept}/{sub.upper()}.png"
             return jsonify({
                 "response": f"Syllabus for {sub.upper()} ({dept}):<br>"
@@ -254,13 +253,15 @@ def admin_add_faq():
     return redirect(url_for("admin_dashboard"))
 
 
-# ------------------ MAIN ------------------
+# ------------------ MAIN (RENDER-COMPATIBLE) ------------------
 
 if __name__ == "__main__":
-    port = 5000
+    port = int(os.environ.get("PORT", 5000))
 
-    def open_browser():
-        webbrowser.open_new(f"http://127.0.0.1:{port}/")
+    # Only open browser locally, not on Render
+    if "RENDER" not in os.environ:
+        def open_browser():
+            webbrowser.open_new(f"http://127.0.0.1:{port}/")
+        threading.Timer(1, open_browser).start()
 
-    threading.Timer(1, open_browser).start()
-    app.run(debug=True, port=port, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
